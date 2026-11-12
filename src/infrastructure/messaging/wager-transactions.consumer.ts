@@ -44,6 +44,7 @@ export class WagerTransactionsConsumer
 {
   private stopping = false;
   private pollLoopPromise?: Promise<void>;
+  private pollAbortController?: AbortController;
   private readonly inFlight = new Set<Promise<void>>();
 
   constructor(
@@ -63,11 +64,12 @@ export class WagerTransactionsConsumer
 
   async onApplicationShutdown(): Promise<void> {
     this.stopping = true;
+    this.pollAbortController?.abort();
     const gracePromise = Promise.allSettled(Array.from(this.inFlight));
     const timeoutPromise = Bun.sleep(this.env.SHUTDOWN_GRACE_MS);
     await Promise.race([gracePromise, timeoutPromise]);
     if (this.pollLoopPromise) {
-      await Promise.race([this.pollLoopPromise, Bun.sleep(1000)]);
+      await Promise.race([this.pollLoopPromise, Bun.sleep(500)]);
     }
   }
 
@@ -82,9 +84,11 @@ export class WagerTransactionsConsumer
   private async runPollLoop(): Promise<void> {
     while (!this.stopping) {
       try {
+        this.pollAbortController = new AbortController();
         const messages = await this.sqs.receiveWagerMessages(
           10,
           this.env.SQS_WAIT_TIME_SEC,
+          this.pollAbortController.signal,
         );
         if (messages.length > 0) {
           await this.processBatch(messages);

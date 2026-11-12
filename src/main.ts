@@ -26,6 +26,22 @@ async function bootstrap() {
   } else {
     await app.init();
   }
+
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      const httpServer = app.getHttpServer?.();
+      httpServer?.closeAllConnections?.();
+      await app.close();
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
 
 if (import.meta.main) {

@@ -143,6 +143,7 @@ export class SqsQueueManager {
   async receiveWagerMessages(
     maxMessages = 10,
     waitTimeSeconds = this.env.SQS_WAIT_TIME_SEC,
+    abortSignal?: AbortSignal,
   ): Promise<Message[]> {
     const queueUrl = await this.getWagerQueueUrl();
     const res = await this.client.send(
@@ -153,6 +154,7 @@ export class SqsQueueManager {
         AttributeNames: ["All"],
         MessageAttributeNames: ["All"],
       }),
+      abortSignal ? { abortSignal } : undefined,
     );
     return res.Messages ?? [];
   }
