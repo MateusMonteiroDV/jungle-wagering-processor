@@ -10,6 +10,7 @@ import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { uuidv7 } from "uuidv7";
 import {
   ClockPort,
+  EventPublisherPort,
   IdGeneratorPort,
   MetricsPort,
   TOKENS,
@@ -17,16 +18,23 @@ import {
 } from "./application/ports";
 import { CreateWalletUseCase } from "./application/use-cases/create-wallet";
 import { ProcessWagerTransactionUseCase } from "./application/use-cases/process-wager-transaction";
+import { PublishOutboxUseCase } from "./application/use-cases/publish-outbox";
 import { GetLedgerQuery } from "./application/use-cases/queries/get-ledger";
 import { GetTransactionQuery } from "./application/use-cases/queries/get-transaction";
 import { GetWalletQuery } from "./application/use-cases/queries/get-wallet";
 import { ReconcileWalletUseCase } from "./application/use-cases/reconcile-wallet";
-import { AppEnv, loadEnv } from "./infrastructure/config/env";
+import { ResolvePendingReferencesUseCase } from "./application/use-cases/resolve-pending-references";
+import { ENV_TOKEN, loadEnv } from "./infrastructure/config/env";
+import { triggerFaultIfActive } from "./infrastructure/fault-injection";
 import { SqsQueueManager } from "./infrastructure/messaging/sqs-client";
+import { SqsEventPublisher } from "./infrastructure/messaging/sqs-event-publisher";
 import { AppLogger } from "./infrastructure/observability/logger";
 import { PrometheusMetrics } from "./infrastructure/observability/metrics";
 import { createMikroOrmOptions } from "./infrastructure/persistence/mikro-orm.config";
 import { MikroOrmUnitOfWork } from "./infrastructure/persistence/unit-of-work";
+import { DlqMetricsWorker } from "./infrastructure/workers/dlq-metrics.worker";
+import { OutboxPublisherWorker } from "./infrastructure/workers/outbox-publisher.worker";
+import { PendingReferenceWorker } from "./infrastructure/workers/pending-reference.worker";
 import {
   AuthGuard,
   NoOpProviderIdentityAdapter,
@@ -38,7 +46,7 @@ import { WageringController } from "./interfaces/http/controllers/wagering.contr
 import { WalletsController } from "./interfaces/http/controllers/wallets.controller";
 import { ErrorMapperFilter } from "./interfaces/http/error-mapper.filter";
 
-export const ENV_TOKEN = Symbol.for("AppEnv");
+export { ENV_TOKEN };
 
 @Module({})
 export class AppModule implements OnModuleInit, OnModuleDestroy {
@@ -99,6 +107,11 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
           useFactory: () => new SqsQueueManager(env),
         },
         {
+          provide: TOKENS.EventPublisherPort,
+          useFactory: (sqs: SqsQueueManager) => new SqsEventPublisher(sqs),
+          inject: [SqsQueueManager],
+        },
+        {
           provide: TOKENS.UnitOfWork,
           useFactory: (orm: MikroORM, metrics: MetricsPort) =>
             new MikroOrmUnitOfWork(
@@ -139,6 +152,46 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
           ],
         },
         {
+          provide: PublishOutboxUseCase,
+          useFactory: (
+            uow: UnitOfWork,
+            publisher: EventPublisherPort,
+            clock: ClockPort,
+            metrics: MetricsPort,
+          ) =>
+            new PublishOutboxUseCase(uow, publisher, clock, metrics, {
+              instanceId: env.INSTANCE_ID,
+              batchSize: env.OUTBOX_BATCH_SIZE,
+              leaseDurationSec: env.OUTBOX_LEASE_SEC,
+              onLeased: () => triggerFaultIfActive("crash_after_lease"),
+            }),
+          inject: [
+            TOKENS.UnitOfWork,
+            TOKENS.EventPublisherPort,
+            TOKENS.ClockPort,
+            TOKENS.MetricsPort,
+          ],
+        },
+        {
+          provide: ResolvePendingReferencesUseCase,
+          useFactory: (
+            uow: UnitOfWork,
+            processWager: ProcessWagerTransactionUseCase,
+            clock: ClockPort,
+          ) =>
+            new ResolvePendingReferencesUseCase(uow, processWager, clock, {
+              batchSize: env.PENDING_REF_BATCH_SIZE,
+              maxAttempts: env.PENDING_REF_MAX_ATTEMPTS,
+              ttlMs: env.PENDING_REF_TTL_MS,
+              baseDelayMs: env.PENDING_REF_BASE_DELAY_MS,
+            }),
+          inject: [
+            TOKENS.UnitOfWork,
+            ProcessWagerTransactionUseCase,
+            TOKENS.ClockPort,
+          ],
+        },
+        {
           provide: ReconcileWalletUseCase,
           useFactory: (
             uow: UnitOfWork,
@@ -162,6 +215,9 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
           useFactory: (uow: UnitOfWork) => new GetTransactionQuery(uow),
           inject: [TOKENS.UnitOfWork],
         },
+        OutboxPublisherWorker,
+        PendingReferenceWorker,
+        DlqMetricsWorker,
         {
           provide: APP_FILTER,
           useFactory: (logger: AppLogger) => new ErrorMapperFilter(logger),
@@ -181,7 +237,12 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
         TOKENS.UnitOfWork,
         CreateWalletUseCase,
         ProcessWagerTransactionUseCase,
+        PublishOutboxUseCase,
+        ResolvePendingReferencesUseCase,
         ReconcileWalletUseCase,
+        OutboxPublisherWorker,
+        PendingReferenceWorker,
+        DlqMetricsWorker,
       ],
     };
   }

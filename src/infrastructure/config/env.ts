@@ -74,6 +74,8 @@ const envSchema = z.object({
 
 export type AppEnv = z.infer<typeof envSchema>;
 
+export const ENV_TOKEN = Symbol.for("AppEnv");
+
 export function loadEnv(overrides?: Record<string, string | undefined>): AppEnv {
   return envSchema.parse({ ...process.env, ...overrides });
 }
