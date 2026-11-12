@@ -28,6 +28,7 @@ import { ENV_TOKEN, loadEnv } from "./infrastructure/config/env";
 import { triggerFaultIfActive } from "./infrastructure/fault-injection";
 import { SqsQueueManager } from "./infrastructure/messaging/sqs-client";
 import { SqsEventPublisher } from "./infrastructure/messaging/sqs-event-publisher";
+import { WagerTransactionsConsumer } from "./infrastructure/messaging/wager-transactions.consumer";
 import { AppLogger } from "./infrastructure/observability/logger";
 import { PrometheusMetrics } from "./infrastructure/observability/metrics";
 import { createMikroOrmOptions } from "./infrastructure/persistence/mikro-orm.config";
@@ -218,6 +219,7 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
         OutboxPublisherWorker,
         PendingReferenceWorker,
         DlqMetricsWorker,
+        WagerTransactionsConsumer,
         {
           provide: APP_FILTER,
           useFactory: (logger: AppLogger) => new ErrorMapperFilter(logger),
@@ -243,6 +245,7 @@ export class AppModule implements OnModuleInit, OnModuleDestroy {
         OutboxPublisherWorker,
         PendingReferenceWorker,
         DlqMetricsWorker,
+        WagerTransactionsConsumer,
       ],
     };
   }
