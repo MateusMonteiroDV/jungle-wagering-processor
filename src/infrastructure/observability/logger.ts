@@ -1,4 +1,4 @@
-import pino, { Logger as PinoLogger } from "pino";
+import pino, { DestinationStream, Logger as PinoLogger } from "pino";
 import { loadEnv } from "../config/env";
 import { getLogContext } from "./context";
 
@@ -37,21 +37,28 @@ function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
 export class AppLogger {
   private readonly logger: PinoLogger;
 
-  constructor(level?: string, instanceId?: string) {
+  constructor(
+    level?: string,
+    instanceId?: string,
+    destination?: DestinationStream,
+  ) {
     const env = loadEnv();
-    this.logger = pino({
-      level: level ?? env.LOG_LEVEL,
-      base: {
-        service: "jungle-wagering-processor",
-        instanceId: instanceId ?? env.INSTANCE_ID,
-      },
-      timestamp: pino.stdTimeFunctions.isoTime,
-      formatters: {
-        level(label) {
-          return { level: label };
+    this.logger = pino(
+      {
+        level: level ?? env.LOG_LEVEL,
+        base: {
+          service: "jungle-wagering-processor",
+          instanceId: instanceId ?? env.INSTANCE_ID,
+        },
+        timestamp: pino.stdTimeFunctions.isoTime,
+        formatters: {
+          level(label) {
+            return { level: label };
+          },
         },
       },
-    });
+      destination,
+    );
   }
 
   info(meta: Record<string, unknown>, message: string): void {
