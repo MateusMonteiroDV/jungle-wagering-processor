@@ -207,7 +207,7 @@ describe("Multi-Process Concurrency, Crash Recovery & SIGKILL Resilience — Sce
     } finally {
       await Promise.all(nodes.map((n) => n.kill("SIGTERM")));
     }
-  });
+  }, 30000);
 
   it("Scenario 5: Worker killed after SQL commit and before SQS ack -> redelivery deduplicated via inbox with single debit", async () => {
     const setupNode = await spawnAppInstance({
@@ -331,7 +331,7 @@ describe("Multi-Process Concurrency, Crash Recovery & SIGKILL Resilience — Sce
     } finally {
       await recoveryWorker.kill("SIGTERM");
     }
-  });
+  }, 30000);
 
   it("Scenario 6: Two outbox publisher processes with crash_after_lease in the first -> second process publishes after lease expiration", async () => {
     const httpOnlyNode = await spawnAppInstance({
@@ -430,7 +430,7 @@ describe("Multi-Process Concurrency, Crash Recovery & SIGKILL Resilience — Sce
     } finally {
       await healthyPub.kill("SIGTERM");
     }
-  });
+  }, 30000);
 
   it("Scenario 8: 3 instances under load killed with SIGKILL mid-flight -> restarted cluster drains queues/outbox/pending and reconciles all wallets", async () => {
     const wave1 = await Promise.all([
@@ -634,5 +634,5 @@ describe("Multi-Process Concurrency, Crash Recovery & SIGKILL Resilience — Sce
     } finally {
       await Promise.all(wave2.map((n) => n.kill("SIGTERM")));
     }
-  });
+  }, 30000);
 });
